@@ -1,34 +1,73 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowRight, Sparkles, Upload, CheckCircle2, ShieldCheck, Image as ImageIcon, Calendar } from 'lucide-react';
+import { ArrowRight, Sparkles, Upload, CheckCircle2, ShieldCheck, Image as ImageIcon, Calendar, Check } from 'lucide-react';
 
 interface HeroProps {
   onViewWorkClick?: () => void;
   onWorkTogetherClick?: () => void;
 }
 
+const DEFAULT_PHOTO_PATH = '/assets/profile-photo.jpg';
+
 export const Hero: React.FC<HeroProps> = ({
   onViewWorkClick,
   onWorkTogetherClick,
 }) => {
-  const [photoUrl, setPhotoUrl] = useState<string | null>(() => {
-    return localStorage.getItem('portfolio_hero_photo') || null;
+  const [photoUrl, setPhotoUrl] = useState<string>(() => {
+    return localStorage.getItem('portfolio_hero_photo') || DEFAULT_PHOTO_PATH;
   });
+  const [photoLoadError, setPhotoLoadError] = useState(false);
   const [isHoveringUpload, setIsHoveringUpload] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle local photo selection so user can immediately view their photo
+  // Sync photo to backend /public/assets/profile-photo.jpg
+  const persistPhotoToLocalAsset = (dataUrl: string) => {
+    setIsSyncing(true);
+    fetch('/api/save-hero-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setIsSyncing(false);
+        if (data.success) {
+          setSyncStatusMessage('Saved as project asset: /assets/profile-photo.jpg');
+          setPhotoLoadError(false);
+          setTimeout(() => setSyncStatusMessage(null), 4000);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not persist to local asset endpoint:', err);
+        setIsSyncing(false);
+      });
+  };
+
+  // Automatically sync any stored photo from browser localStorage to /public/assets/profile-photo.jpg
+  useEffect(() => {
+    const localPhoto = localStorage.getItem('portfolio_hero_photo');
+    if (localPhoto && localPhoto.startsWith('data:image')) {
+      persistPhotoToLocalAsset(localPhoto);
+    }
+  }, []);
+
+  // Handle local photo selection
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          setPhotoUrl(reader.result);
+          const resultData = reader.result;
+          setPhotoUrl(resultData);
+          setPhotoLoadError(false);
           try {
-            localStorage.setItem('portfolio_hero_photo', reader.result);
+            localStorage.setItem('portfolio_hero_photo', resultData);
           } catch {
             // Storage quota warning fallback
           }
+          persistPhotoToLocalAsset(resultData);
         }
       };
       reader.readAsDataURL(file);
@@ -43,12 +82,15 @@ export const Hero: React.FC<HeroProps> = ({
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          setPhotoUrl(reader.result);
+          const resultData = reader.result;
+          setPhotoUrl(resultData);
+          setPhotoLoadError(false);
           try {
-            localStorage.setItem('portfolio_hero_photo', reader.result);
+            localStorage.setItem('portfolio_hero_photo', resultData);
           } catch {
             // Storage quota fallback
           }
+          persistPhotoToLocalAsset(resultData);
         }
       };
       reader.readAsDataURL(file);
@@ -57,7 +99,8 @@ export const Hero: React.FC<HeroProps> = ({
 
   const clearPhoto = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setPhotoUrl(null);
+    setPhotoUrl(DEFAULT_PHOTO_PATH);
+    setPhotoLoadError(false);
     localStorage.removeItem('portfolio_hero_photo');
   };
 
@@ -202,29 +245,60 @@ export const Hero: React.FC<HeroProps> = ({
                     : 'border-[#B08D3C]/40'
                 } shadow-2xl flex flex-col items-center justify-center p-6 text-center transition-all`}
               >
-                {photoUrl ? (
+                {photoUrl && !photoLoadError ? (
                   <>
                     <img
                       id="hero-professional-photograph"
                       src={photoUrl}
-                      alt="Professional Portrait — Social Media Manager & Content Strategist"
+                      alt="Deborah Odion — Social Media Manager & Content Strategist"
                       className="w-full h-full object-cover object-center"
+                      onError={() => {
+                        // If relative path fails to load, check if we have dataUrl in localStorage
+                        const local = localStorage.getItem('portfolio_hero_photo');
+                        if (local && local !== photoUrl) {
+                          setPhotoUrl(local);
+                        } else {
+                          setPhotoLoadError(true);
+                        }
+                      }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0F2922]/80 via-transparent to-transparent pointer-events-none" />
                     
+                    {/* Sync status alert when saved to local asset */}
+                    {syncStatusMessage && (
+                      <div className="absolute top-4 left-4 right-4 z-30 bg-[#0F2922]/95 border border-[#B08D3C] px-3 py-2 rounded-sm text-[11px] text-[#F7F1E6] flex items-center justify-between shadow-xl">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-[#B08D3C] shrink-0" />
+                          <span>{syncStatusMessage}</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Floating photo caption and change button */}
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between z-20 bg-[#0F2922]/90 backdrop-blur-md px-3.5 py-2 rounded-sm border border-[#B08D3C]/30 text-left">
                       <div>
-                        <p className="text-xs font-medium text-[#F7F1E6]">Professional Portrait</p>
-                        <p className="text-[10px] text-[#B08D3C]">Provided Photograph Active</p>
+                        <p className="text-xs font-medium text-[#F7F1E6]">Deborah Odion</p>
+                        <p className="text-[10px] text-[#B08D3C]">
+                          {isSyncing ? 'Syncing to project asset...' : 'Project Asset: /assets/profile-photo.jpg'}
+                        </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={clearPhoto}
-                        className="text-[11px] text-[#E9DDC9]/80 hover:text-[#B08D3C] underline transition-colors"
-                      >
-                        Change
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          className="hidden"
+                          id="hero-photo-file-input-change"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="text-[11px] text-[#E9DDC9]/80 hover:text-[#B08D3C] underline transition-colors cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -259,7 +333,7 @@ export const Hero: React.FC<HeroProps> = ({
                     </div>
 
                     <p className="text-[11px] text-[#E9DDC9]/50 mt-4">
-                      Preserves exact aspect ratio &amp; high resolution
+                      Saves directly as /assets/profile-photo.jpg for Vercel deployment
                     </p>
                   </div>
                 )}
